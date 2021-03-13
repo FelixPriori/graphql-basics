@@ -1,13 +1,13 @@
 import {v4 as uuidv4} from 'uuid'
 
 const Mutation = {
-  createUser(parent, args, {db}, info) {
-    const emailTaken = db.users.some(({email}) => args.data.email === email)
+  createUser(parent, {data}, {db}, info) {
+    const emailTaken = db.users.some(({email}) => data.email === email)
 
     if (emailTaken) throw new Error('Email taken')
 
     const user = {
-      ...args.data,
+      ...data,
       id: uuidv4(),
     }
 
@@ -20,7 +20,7 @@ const Mutation = {
 
     if (userIndex < 0) throw new Error('User not found')
 
-    const deletedUser = db.users.splice(userIndex, 1) // remove user
+    const [user] = db.users.splice(userIndex, 1) // remove user
 
     // clean up posts from deleted user
     db.posts = db.posts.filter((post) => {
@@ -35,7 +35,7 @@ const Mutation = {
     // clean up comments from deleted user
     db.comments = db.comments.filter(({author}) => author !== args.id)
 
-    return deletedUser[0]
+    return user
   },
   updateUser(parent, {id, data}, {db}, info) {
     const {email, name, age} = data
@@ -55,78 +55,145 @@ const Mutation = {
 
     return user
   },
-  createPost(parent, args, {db}, info) {
-    const userExists = db.users.some((user) => user.id === args.data.author)
+  createPost(parent, {data}, {db, pubsub}, info) {
+    const userExists = db.users.some((user) => user.id === data.author)
 
     if (!userExists) throw new Error('User not found')
 
     const post = {
-      ...args.data,
+      ...data,
       id: uuidv4(),
     }
 
     db.posts.push(post)
 
+    if (data.published)
+      pubsub.publish(`post`, {
+        post: {
+          mutation: 'CREATED',
+          data: post,
+        },
+      })
+
     return post
   },
-  deletePost(parent, args, {db}, info) {
-    const postIndex = db.posts.findIndex(({id}) => String(id) === args.id)
+  deletePost(parent, args, {db, pubsub}, info) {
+    const postIndex = db.posts.findIndex(({id}) => id === args.id)
 
     if (postIndex < 0) throw new Error('Post not found')
 
-    const deletedPost = db.posts.splice(postIndex, 1) // remove post
+    const [post] = db.posts.splice(postIndex, 1) // remove post
 
     // clean up comments on deleted post
-    db.comments = db.comments.filter((comment) => String(comment.post) === args.id)
+    db.comments = db.comments.filter((comment) => comment.post === args.id)
 
-    return deletedPost[0]
+    if (post.published)
+      pubsub.publish(`post`, {
+        post: {
+          mutation: 'DELETED',
+          data: post,
+        },
+      })
+
+    return post
   },
-  updatePost(parent, {id, data}, {db}, info) {
+  updatePost(parent, {id, data}, {db, pubsub}, info) {
     const {title, body, published} = data
-    const post = db.posts.find((post) => String(post.id) === id)
+    const post = db.posts.find((post) => post.id === id)
+
+    const originalPost = {...post}
 
     if (!post) throw new Error('Post not found')
 
     if (typeof title === 'string') post.title = title
     if (typeof body === 'string') post.body = body
-    if (typeof published === 'boolean') post.published = published
+    if (typeof published === 'boolean') {
+      post.published = published
+
+      if (originalPost.published && !post.published) {
+        // deleted
+        pubsub.publish(`post`, {
+          post: {
+            mutation: 'DELETED',
+            data: originalPost,
+          },
+        })
+      } else if (!originalPost.published && post.published) {
+        // created
+        pubsub.publish(`post`, {
+          post: {
+            mutation: 'CREATED',
+            data: post,
+          },
+        })
+      }
+    } else if (post.published) {
+      // updated
+      pubsub.publish(`post`, {
+        post: {
+          mutation: 'UPDATED',
+          data: post,
+        },
+      })
+    }
 
     return post
   },
-  createComment(parent, args, {db}, info) {
-    const userExists = db.users.some((user) => user.id === args.data.author)
-    const postExists = db.posts.some((post) => post.id === args.data.post)
-    const postPublished = db.posts.some((post) => post.id === args.data.post && post.published)
+  createComment(parent, {data}, {db, pubsub}, info) {
+    const userExists = db.users.some((user) => user.id === data.author)
+    const postExists = db.posts.some((post) => post.id === data.post)
+    const postPublished = db.posts.some((post) => post.id === data.post && post.published)
 
     if (!userExists) throw new Error('User not found')
     if (!postExists) throw new Error('Post not found')
     if (!postPublished) throw new Error('Post not published')
 
     const comment = {
-      ...args.data,
+      ...data,
       id: uuidv4(),
     }
 
     db.comments.push(comment)
 
+    pubsub.publish(`comment ${data.post}`, {
+      comment: {
+        mutation: 'CREATED',
+        data: comment,
+      },
+    })
+
     return comment
   },
-  deleteComment(parent, args, {db}, info) {
-    const commentIndex = db.comments.findIndex(({id}) => String(id) === args.id)
+  deleteComment(parent, args, {db, pubsub}, info) {
+    const commentIndex = db.comments.findIndex(({id}) => id === args.id)
 
     if (commentIndex < 0) throw new Error('Comment not found')
 
-    const deletedComment = db.comments.splice(commentIndex, 1) // remove comment
+    const [comment] = db.comments.splice(commentIndex, 1) // remove comment
 
-    return deletedComment[0]
+    pubsub.publish(`comment ${comment.post}`, {
+      comment: {
+        mutation: 'DELETED',
+        data: comment,
+      },
+    })
+
+    return comment
   },
-  updateComment(parent, {id, data}, {db}, info) {
+  updateComment(parent, {id, data}, {db, pubsub}, info) {
     const {text} = data
-    const comment = db.comments.find((comment) => String(comment.id) === id)
+    const comment = db.comments.find((comment) => comment.id === id)
 
     if (!comment) throw new Error('Comment not found')
 
     if (typeof text === 'string') comment.text = text
+
+    pubsub.publish(`comment ${comment.post}`, {
+      comment: {
+        mutation: 'UPDATED',
+        data: comment,
+      },
+    })
 
     return comment
   },
