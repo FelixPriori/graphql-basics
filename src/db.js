@@ -29,21 +29,21 @@ const users = [
 
 const posts = [
   {
-    id: 1,
+    id: '1',
     title: 'How to do stuff',
     body: 'You do it and then its done lol',
     published: true,
     author: userIDs.felix,
   },
   {
-    id: 2,
+    id: '2',
     title: 'How eat stuff',
     body: 'Use a fork dummy lol',
     published: false,
     author: userIDs.kent,
   },
   {
-    id: 3,
+    id: '3',
     title: 'How build stuff',
     body: 'Just pile them lol',
     published: false,
@@ -53,28 +53,28 @@ const posts = [
 
 const comments = [
   {
-    id: 11,
+    id: '11',
     text: 'This is the best post',
     author: userIDs.kim,
-    post: 1,
+    post: '1',
   },
   {
-    id: 12,
+    id: '12',
     text: 'This is the worst post',
     author: userIDs.kent,
-    post: 1,
+    post: '1',
   },
   {
-    id: 13,
+    id: '13',
     text: 'I dont know if its good or bad',
     author: userIDs.felix,
-    post: 3,
+    post: '3',
   },
   {
-    id: 14,
+    id: '14',
     text: 'what am i doing here',
     author: userIDs.kim,
-    post: 2,
+    post: '2',
   },
 ]
 
